@@ -25,6 +25,22 @@ const FITBIT_SCOPE =
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+type SyncInterval = "hourly" | "daily" | "weekly" | "manual";
+
+const SYNC_INTERVAL_MS: Record<SyncInterval, number | null> = {
+	hourly:  60 * 60 * 1000,
+	daily:   24 * 60 * 60 * 1000,
+	weekly:  7 * 24 * 60 * 60 * 1000,
+	manual:  null,
+};
+
+const SYNC_INTERVAL_LABELS: Record<SyncInterval, string> = {
+	hourly:  "Once an hour",
+	daily:   "Once a day",
+	weekly:  "Once a week",
+	manual:  "Manual only",
+};
+
 interface FitbitTokens {
 	accessToken: string;
 	refreshToken: string;
@@ -38,6 +54,7 @@ interface FitbitSyncSettings {
 	savePath: string;
 	goalSteps: number;
 	goalCardioMinutes: number;
+	syncInterval: SyncInterval;
 	tokens: FitbitTokens | null;
 	// PKCE state kept temporarily during the OAuth flow
 	pkceVerifier: string;
@@ -66,6 +83,7 @@ const DEFAULT_SETTINGS: FitbitSyncSettings = {
 	savePath: "Fitbit",
 	goalSteps: 10000,
 	goalCardioMinutes: 150,
+	syncInterval: "hourly",
 	tokens: null,
 	pkceVerifier: "",
 	pkceState: "",
@@ -106,6 +124,7 @@ function todayString(): string {
 
 export default class FitbitSyncPlugin extends Plugin {
 	settings: FitbitSyncSettings;
+	private autoSyncIntervalId: number | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -129,10 +148,37 @@ export default class FitbitSyncPlugin extends Plugin {
 
 		// Add settings tab
 		this.addSettingTab(new FitbitSyncSettingTab(this.app, this));
+
+		// Start the automatic sync schedule
+		this.scheduleAutoSync();
 	}
 
 	onunload() {
-		// Obsidian automatically cleans up registered protocol handlers and commands
+		this.clearAutoSync();
+	}
+
+	// ─── Auto Sync Scheduling ────────────────────────────────────────────────────
+
+	scheduleAutoSync() {
+		// Clear any previously registered interval first
+		this.clearAutoSync();
+
+		const ms = SYNC_INTERVAL_MS[this.settings.syncInterval];
+		if (ms === null) return; // manual — nothing to schedule
+
+		// registerInterval ensures cleanup on plugin unload
+		this.autoSyncIntervalId = this.registerInterval(
+			window.setInterval(() => {
+				this.syncToday();
+			}, ms)
+		);
+	}
+
+	private clearAutoSync() {
+		if (this.autoSyncIntervalId !== null) {
+			window.clearInterval(this.autoSyncIntervalId);
+			this.autoSyncIntervalId = null;
+		}
 	}
 
 	async loadSettings() {
@@ -797,6 +843,37 @@ class FitbitSyncSettingTab extends PluginSettingTab {
 					await this.plugin.startOAuthFlow();
 				})
 		);
+
+		containerEl.createEl("hr");
+		containerEl.createEl("h3", { text: "Sync Schedule" });
+
+		// ── Sync Interval ──
+		new Setting(containerEl)
+			.setName("Sync interval")
+			.setDesc("How often the plugin automatically syncs Fitbit data. Changes take effect immediately.")
+			.addDropdown((drop) => {
+				for (const [value, label] of Object.entries(SYNC_INTERVAL_LABELS)) {
+					drop.addOption(value, label);
+				}
+				drop.setValue(this.plugin.settings.syncInterval);
+				drop.onChange(async (value) => {
+					this.plugin.settings.syncInterval = value as SyncInterval;
+					await this.plugin.saveSettings();
+					this.plugin.scheduleAutoSync();
+				});
+			});
+
+		// ── Sync Now ──
+		new Setting(containerEl)
+			.setName("Manual sync")
+			.setDesc("Fetch and write today's Fitbit data immediately.")
+			.addButton((btn) => {
+				btn.setButtonText("Sync Now").setCta().onClick(async () => {
+					btn.setButtonText("Syncing…").setDisabled(true);
+					await this.plugin.syncToday();
+					btn.setButtonText("Sync Now").setDisabled(false);
+				});
+			});
 
 		containerEl.createEl("hr");
 		containerEl.createEl("h3", { text: "Save Location" });
