@@ -137,3 +137,11 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Obsidian plugin build output
+main.js
+main.js.map
+styles.css
+
+# Obsidian plugin data (contains OAuth tokens — never commit)
+data.json
