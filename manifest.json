@@ -1,0 +1,11 @@
+{
+	"id": "fitbit-obsidian-sync",
+	"name": "Fitbit Obsidian Sync",
+	"version": "1.0.0",
+	"minAppVersion": "1.4.0",
+	"description": "Sync Fitbit health data (steps, sleep, HRV, readiness, heart rate) into your daily notes as YAML frontmatter.",
+	"author": "GROSJ033",
+	"authorUrl": "https://github.com/GROSJ033",
+	"fundingUrl": "",
+	"isDesktopOnly": false
+}
